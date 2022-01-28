@@ -140,14 +140,14 @@ function daqchannels(dev::NIDev)
 end
 
 
-function daqconfig(dev::NIDev; freq=100.0, nsamples=1,
+function daqconfig(dev::NIDev; rate=100.0, nsamples=1,
                        source="",
                        samplemode=NIDAQ.DAQmx_Val_FiniteSamps,
                        activeedge=NIDAQ.DAQmx_Val_Rising)
 
     nsamples = UInt64(nsamples)
 
-    r = NIDAQ.DAQmxCfgSampClkTiming(dev.handle, source, freq,
+    r = NIDAQ.DAQmxCfgSampClkTiming(dev.handle, source, rate,
                                     activeedge, samplemode, nsamples)
     
     r != 0 && throw(NIException(r))
