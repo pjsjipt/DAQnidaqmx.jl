@@ -1,12 +1,10 @@
 module DAQnidaqmx
 
-import AbstractDAQs
-using AbstractDAQs: AbstractDAQ, daqaddinput, daqstart, daqstop, daqread, daqacquire, daqconfig
-using AbstractDAQs: numchannels, daqchannels, isdaqfinished, isreading, samplesread
+using AbstractDAQs
 
 import NIDAQ
 
-export AbstractDAQ, NIDev, daqaddinput, daqstart, daqstop, daqread, daqacquire, daqconfig
+export NIDev, daqaddinput, daqstart, daqstop, daqread, daqacquire, daqconfig
 export numchannels, daqchannels, isdaqfinished, isreading, samplesread
 
 export NIException
@@ -19,7 +17,7 @@ export TermConfig, NIDefault, NIRSE, NINRSE, NIDiff, NIPseudoDiff
 mutable struct NIDev <: AbstractDAQs.AbstractDAQ
     devname::String
     handle::NIDAQ.TaskHandle
-    freq::Float64
+    rate::Float64
     nsamples::Int64
     NIDev(devname::String, handle::NIDAQ.TaskHandle) = new(devname, handle, -1.0, -1)
 end
@@ -127,22 +125,22 @@ end
 
 
 """
-`daqaddinput(dev::NIDev, chans, channames; termconf, minval, maxmval, units, customscale)`
+`daqaddinput(dev::NIDev, chans, names; termconf, minval, maxmval, units, customscale)`
 
 Adds input to `NIDev` object. For now it handles only AI Voltage channels. In the future, 
 more specific input types will be implemented.
 
 ## Arguments
  * `chans`: Physical channels usually something like "Dev1/ai0". See NIDAQmx documentation.
- * `channames`: Channel names, if "" the physical names are used. 
+ * `names`: Channel names, if "" the physical names are used. 
  * `termconf`: Terminal configuration (RSE, NRSE, Differential, Pseudodifferential). See [`TermConf`] and NIDAQmx docs for further information
  * `minval` and `maxval`:
 
 """
-function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString, channames::AbstractString="";
+function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString, names::AbstractString="";
                      termconf=NIDefault, minval=0.0, maxval=5.0,
                      units=NIDAQ.DAQmx_Val_Volts, customscalename="")
-    r = NIDAQ.DAQmxCreateAIVoltageChan(dev.handle, chans, channames,
+    r = NIDAQ.DAQmxCreateAIVoltageChan(dev.handle, chans, names,
                                        termconf, minval, maxval,
                                        units, customscalename)
     r != 0 && throw(NIException(r))
@@ -151,7 +149,7 @@ function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString, channames::
 end
 
 function AbstractDAQs.daqaddinput(dev::NIDev, devname::AbstractString,
-                     chans::AbstractVector{<:Int}, channames="";
+                     chans::AbstractVector{<:Int}, names="";
                      termconf=NIDiff, s = "ai",
                      minval=0.0, maxval=0.0,
                      units=NIDAQ.DAQmx_Val_Volts, customscalename="")
@@ -164,15 +162,15 @@ function AbstractDAQs.daqaddinput(dev::NIDev, devname::AbstractString,
     else
         ch = join(("$devname/$s$i" for i in chans), ",")
     end
-    if channames==""
+    if names==""
         chnames = ""
-    elseif isa(channames, AbstractString)
-        chnames = join((channames[1]*string(c) for c in chans), ",")
-    elseif isa(channames, AbstractVector)
-        #if length(channames) == length(chans)
-        chnames = join(channames, ",")
+    elseif isa(names, AbstractString)
+        chnames = join((names[1]*string(c) for c in chans), ",")
+    elseif isa(names, AbstractVector)
+        #if length(names) == length(chans)
+        chnames = join(names, ",")
     else
-        throw("channames: $channames. Illegal format!")
+        throw("names: $names. Illegal format!")
     end
 
     daqaddinput(dev, ch, chnames, termconf=termconf, minval=minval, maxval=maxval,
@@ -209,7 +207,7 @@ function AbstractDAQs.daqchannels(dev::NIDev)
 end
 
 
-function daqconfig(dev::NIDev; rate=100.0, nsamples=1,
+function AbstractDAQs.daqconfig(dev::NIDev; rate=100.0, nsamples=1,
                        source="",
                        samplemode=NIDAQ.DAQmx_Val_FiniteSamps,
                        activeedge=NIDAQ.DAQmx_Val_Rising)
@@ -220,7 +218,7 @@ function daqconfig(dev::NIDev; rate=100.0, nsamples=1,
                                     activeedge, samplemode, nsamples)
     r != 0 && throw(NIException(r))
 
-    dev.freq = freq
+    dev.rate = rate
     dev.nsamples = nsamples
 
     return 
@@ -262,7 +260,7 @@ function AbstractDAQs.daqread(dev::NIDev)
 
     stoptask(dev)
     
-    return buffer, dev.freq
+    return buffer, dev.rate
     
 end
 
