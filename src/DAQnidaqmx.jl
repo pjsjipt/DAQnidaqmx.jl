@@ -19,7 +19,8 @@ mutable struct NIDev <: AbstractDAQs.AbstractDAQ
     handle::NIDAQ.TaskHandle
     rate::Float64
     nsamples::Int64
-    NIDev(devname::String, handle::NIDAQ.TaskHandle) = new(devname, handle, -1.0, -1)
+    conf::DAQConfig
+    NIDev(devname::String, handle::NIDAQ.TaskHandle) = new(devname, handle, -1.0, -1, DAQConfig(devname=devname))
 end
 
 """
@@ -145,6 +146,14 @@ function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString; names::Abst
                                        units, customscalename)
     r != 0 && throw(NIException(r))
     
+    dev.conf.fpars["minval"] = minval
+    dev.conf.fpars["minval"] = maxval
+    dev.conf.ipars["units"] = units
+    dev.conf.ipars["termconf"] = Int(termconf)
+    dev.conf.spars["customscalename"] = customscalename
+    dev.conf.spars["nichans"] = chans
+    
+    
     return 
 end
 
@@ -218,7 +227,11 @@ function AbstractDAQs.daqconfigdev(dev::NIDev; rate=100.0, nsamples=1,
 
     dev.rate = rate
     dev.nsamples = nsamples
-
+    dev.conf.fpars["rate"] = rate
+    dev.conf.ipars["nsamples"] = nsamples
+    dev.conf.ipars["samplemode"] = samplemode
+    dev.conf.ipars["activeedge"] = activeedge
+    
     return 
                                     
 end                       
