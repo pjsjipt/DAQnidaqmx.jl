@@ -137,7 +137,7 @@ more specific input types will be implemented.
  * `minval` and `maxval`:
 
 """
-function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString, names::AbstractString="";
+function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString; names::AbstractString="",
                      termconf=NIDefault, minval=0.0, maxval=5.0,
                      units=NIDAQ.DAQmx_Val_Volts, customscalename="")
     r = NIDAQ.DAQmxCreateAIVoltageChan(dev.handle, chans, names,
@@ -149,15 +149,14 @@ function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString, names::Abst
 end
 
 function AbstractDAQs.daqaddinput(dev::NIDev, devname::AbstractString,
-                     chans::AbstractVector{<:Int}, names="";
+                     chans::AbstractVector{<:Integer}; names="",
                      termconf=NIDiff, s = "ai",
-                     minval=0.0, maxval=0.0,
+                     minval=0.0, maxval=5.0,
                      units=NIDAQ.DAQmx_Val_Volts, customscalename="")
 
     # Create a string appropriate for
 
     if isa(chans, UnitRange)
-        println(s)
         ch = "$devname/$s$(first(chans)):$(last(chans))"
     else
         ch = join(("$devname/$s$i" for i in chans), ",")
@@ -172,8 +171,7 @@ function AbstractDAQs.daqaddinput(dev::NIDev, devname::AbstractString,
     else
         throw("names: $names. Illegal format!")
     end
-
-    daqaddinput(dev, ch, chnames, termconf=termconf, minval=minval, maxval=maxval,
+    daqaddinput(dev, ch; names=chnames, termconf=termconf, minval=minval, maxval=maxval,
                 units=units, customscalename=customscalename)
 
     return
@@ -207,7 +205,7 @@ function AbstractDAQs.daqchannels(dev::NIDev)
 end
 
 
-function AbstractDAQs.daqconfig(dev::NIDev; rate=100.0, nsamples=1,
+function AbstractDAQs.daqconfigdev(dev::NIDev; rate=100.0, nsamples=1,
                        source="",
                        samplemode=NIDAQ.DAQmx_Val_FiniteSamps,
                        activeedge=NIDAQ.DAQmx_Val_Rising)
@@ -224,6 +222,8 @@ function AbstractDAQs.daqconfig(dev::NIDev; rate=100.0, nsamples=1,
     return 
                                     
 end                       
+
+AbstractDAQs.daqconfig(dev::NIDev; rate=100.0, nsamples=1) = daqconfigdev(dev, rate=rate, nsamples=nsamples)
 
 function AbstractDAQs.isdaqfinished(dev::NIDev)
 
@@ -253,9 +253,14 @@ function AbstractDAQs.daqread(dev::NIDev)
     fm1 =  Int32[NIDAQ.DAQmx_Val_GroupByScanNumber]
     fm =  reinterpret(NIDAQ.Bool32, fm1)[1]
     nsr = Int32[1]
+
+    # Wait for reading to end:
+    while !isdaqfinished(dev)
+        sleep(0.05)
+    end
+    
     r = NIDAQ.DAQmxReadAnalogF64(dev.handle, -1, -1.0, fm, buffer, nsamples*nch, nsr,
                                  Ptr{NIDAQ.Bool32}(0))
-
     r != 0 && throw(NIException(r))
 
     stoptask(dev)
