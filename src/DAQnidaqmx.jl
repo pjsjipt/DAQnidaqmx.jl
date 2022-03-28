@@ -282,6 +282,7 @@ AbstractDAQs.isreading(dev::NIDev) = !isdaqfinished(dev)
 function AbstractDAQs.daqstart(dev::NIDev, usethread=true)
     r = NIDAQ.DAQmxStartTask(dev.handle)
     r != 0 && throw(NIException(r))
+    dev.time = now()
     return
 end
 
