@@ -1,7 +1,7 @@
 module DAQnidaqmx
 
 using AbstractDAQs
-
+using Dates
 import NIDAQ
 
 export NIDev, daqaddinput, daqstart, daqstop, daqread, daqacquire, daqconfig
@@ -141,10 +141,10 @@ function setchanidx!(dev::NIDev)
 
     chn = daqchannels(dev)
     chd = Dict{String,Int}()
-    for i,c in enumerate(chn)
+    for (i,c) in enumerate(chn)
         chd[c] = i
     end
-    dev.chandix = chd
+    dev.chanidx = chd
     return
 
 end
