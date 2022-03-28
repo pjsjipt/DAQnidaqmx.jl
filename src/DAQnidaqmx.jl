@@ -4,7 +4,7 @@ using AbstractDAQs
 using Dates
 import NIDAQ
 
-export NIDev, daqaddinput, daqstart, daqstop, daqread, daqacquire, daqconfig
+export NIDev, daqaddinput, daqstart, daqstop, daqread, daqacquire, daqconfig, daqconfigdev
 export numchannels, daqchannels, isdaqfinished, isreading, samplesread
 
 export NIException
@@ -242,12 +242,38 @@ function AbstractDAQs.daqchannels(dev::NIDev)
 end
 
 
-function AbstractDAQs.daqconfigdev(dev::NIDev; rate=100.0, nsamples=1,
-                       source="",
+function AbstractDAQs.daqconfigdev(dev::NIDev; source="",
                        samplemode=NIDAQ.DAQmx_Val_FiniteSamps,
-                       activeedge=NIDAQ.DAQmx_Val_Rising)
+                       activeedge=NIDAQ.DAQmx_Val_Rising, kw...)
 
-    nsamples = UInt64(nsamples)
+    
+    if haskey(kw, :rate) && haskey(kw, :dt)
+        error("Parameters `rate` and `dt` can not be specified simultaneously!")
+    elseif haskey(kw, :rate) || haskey(kw, :dt)
+        if haskey(kw, :rate)
+            rate = kw[:rate]
+        else
+            dt = kw[:dt]
+            rate = 1/dt 
+        end
+    else
+        rate = dev.conf.fpars["rate"]
+    end
+
+
+    if haskey(kw, :nsamples) && haskey(kw, :time)
+        error("Parameters `nsamples` and `time` can not be specified simultaneously!")
+    elseif haskey(kw, :nsamples) || haskey(kw, :time)
+        if haskey(kw, :nsamples)
+            nsamples = UInt64(kw[:nsamples])
+        else
+            tt = kw[:time]
+            dt = 1/rate
+            nsamples = round(UInt64, tt / dt)
+        end
+    else
+        nsamples = UInt64(dev.conf.ipars("nsamples"))
+    end    
 
     r = NIDAQ.DAQmxCfgSampClkTiming(dev.handle, source, rate,
                                     activeedge, samplemode, nsamples)
@@ -264,7 +290,12 @@ function AbstractDAQs.daqconfigdev(dev::NIDev; rate=100.0, nsamples=1,
                                     
 end                       
 
-AbstractDAQs.daqconfig(dev::NIDev; rate=100.0, nsamples=1) = daqconfigdev(dev, rate=rate, nsamples=nsamples)
+function AbstractDAQs.daqconfig(dev::NIDev; source="",
+                                samplemode=NIDAQ.DAQmx_Val_FiniteSamps,
+                                activeedge=NIDAQ.DAQmx_Val_Rising, kw...)
+    daqconfigdev(dev; source=source, samplemode=samplemode, activeedge=activeedge, kw...)
+end
+
 
 function AbstractDAQs.isdaqfinished(dev::NIDev)
 
