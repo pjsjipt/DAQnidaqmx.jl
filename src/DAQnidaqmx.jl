@@ -19,8 +19,12 @@ mutable struct NIDev <: AbstractDAQs.AbstractDAQ
     handle::NIDAQ.TaskHandle
     rate::Float64
     nsamples::Int64
+    time::DateTime
     conf::DAQConfig
-    NIDev(devname::String, handle::NIDAQ.TaskHandle) = new(devname, handle, -1.0, -1, DAQConfig(devname=devname))
+    chanidx::Dict{String,Int}
+    NIDev(devname::String, handle::NIDAQ.TaskHandle) = new(devname, handle, -1.0, -1, now(),
+                                                           DAQConfig(devname=devname),
+                                                           Dict{String,Int}())
 end
 
 """
@@ -124,6 +128,27 @@ function AbstractDAQs.daqstop(dev::NIDev)
     stoptask(dev)
 end
 
+"""
+`setchanidx!(dev::NIDev)`
+
+Reads the channel names and sets up `chanidx` Dict field that
+maps from channel names (`String`) to index (Integer)
+
+
+
+"""
+function setchanidx!(dev::NIDev)
+
+    chn = daqchannels(dev)
+    chd = Dict{String,Int}()
+    for i,c in enumerate(chn)
+        chd[c] = i
+    end
+    dev.chandix = chd
+    return
+
+end
+
 
 """
 `daqaddinput(dev::NIDev, chans, names; termconf, minval, maxmval, units, customscale)`
@@ -153,6 +178,7 @@ function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString; names::Abst
     dev.conf.spars["customscalename"] = customscalename
     dev.conf.spars["nichans"] = chans
     
+    setchanidx!(dev)
     
     return 
 end
@@ -182,6 +208,8 @@ function AbstractDAQs.daqaddinput(dev::NIDev, devname::AbstractString,
     end
     daqaddinput(dev, ch; names=chnames, termconf=termconf, minval=minval, maxval=maxval,
                 units=units, customscalename=customscalename)
+
+    setchanidx!(dev)
 
     return
         
@@ -278,7 +306,8 @@ function AbstractDAQs.daqread(dev::NIDev)
 
     stoptask(dev)
     
-    return buffer, dev.rate
+    return MeasData{Matrix{Float64},Int}(devname(dev), devtype(dev), dev.time,
+                                         dev.rate, buffer, 0, dev.chanidx)
     
 end
 
