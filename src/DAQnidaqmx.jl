@@ -1,6 +1,6 @@
 module DAQnidaqmx
 
-using AbstractDAQs
+using DAQCore
 using Dates
 import NIDAQ
 
@@ -14,17 +14,12 @@ export TermConfig, NIDefault, NIRSE, NINRSE, NIDiff, NIPseudoDiff
 @enum TermConfig::Int32 NIDefault=NIDAQ.DAQmx_Val_Cfg_Default NIRSE=NIDAQ.DAQmx_Val_RSE NINRSE=NIDAQ.DAQmx_Val_NRSE NIDiff=NIDAQ.DAQmx_Val_Diff NIPseudoDiff=NIDAQ.DAQmx_Val_PseudoDiff
 
 
-mutable struct NIDev <: AbstractDAQs.AbstractDAQ
+mutable struct NIDev <: AbstractInputDev
     devname::String
     handle::NIDAQ.TaskHandle
-    rate::Float64
-    nsamples::Int64
-    time::DateTime
-    conf::DAQConfig
-    chanidx::Dict{String,Int}
-    NIDev(devname::String, handle::NIDAQ.TaskHandle) = new(devname, handle, -1.0, -1, now(),
-                                                           DAQConfig(devname=devname),
-                                                           Dict{String,Int}())
+    sampling::DaqSamplingRate
+    config::DaQConfig
+    chans::DaqChannels{String,Int}
 end
 
 """
@@ -87,8 +82,10 @@ function NIDev(devname::String, loadmaxtask::Bool=false)
         r != 0 && throw(NIException(r))
         handle = th[]
     end
-    
-    return NIDev(devname, handle)
+    chans = DaqChannels(devname, "NIDAQmx", String[], "", 0)
+    sampling = DaqSamplingRate(-1.0, 1, now())
+    config = DaqConfig()
+    return NIDev(devname, handle, sampling, config, chans)
 end
 
 """
@@ -122,32 +119,12 @@ end
 """
 `daqstop(dev)`
 
-Just a wrapper around [`stoptask`](@ref) implementing the [`AbstractDAQs` ](@ref) interface.
+Just a wrapper around [`stoptask`](@ref) implementing the [`DAQCore` ](@ref) interface.
 """
-function AbstractDAQs.daqstop(dev::NIDev)
+function DAQCore.daqstop(dev::NIDev)
     stoptask(dev)
 end
 
-"""
-`setchanidx!(dev::NIDev)`
-
-Reads the channel names and sets up `chanidx` Dict field that
-maps from channel names (`String`) to index (Integer)
-
-
-
-"""
-function setchanidx!(dev::NIDev)
-
-    chn = daqchannels(dev)
-    chd = Dict{String,Int}()
-    for (i,c) in enumerate(chn)
-        chd[c] = i
-    end
-    dev.chanidx = chd
-    return
-
-end
 
 
 """
@@ -163,27 +140,31 @@ more specific input types will be implemented.
  * `minval` and `maxval`:
 
 """
-function AbstractDAQs.daqaddinput(dev::NIDev, chans::AbstractString; names::AbstractString="",
-                     termconf=NIDefault, minval=0.0, maxval=5.0,
-                     units=NIDAQ.DAQmx_Val_Volts, customscalename="")
+function DAQCore.daqaddinput(dev::NIDev, chans::AbstractString;
+                                  names::AbstractString="", termconf=NIDefault,
+                                  minval=0.0, maxval=5.0, units=NIDAQ.DAQmx_Val_Volts,
+                                  customscalename="")
+    
     r = NIDAQ.DAQmxCreateAIVoltageChan(dev.handle, chans, names,
                                        termconf, minval, maxval,
                                        units, customscalename)
     r != 0 && throw(NIException(r))
     
-    dev.conf.fpars["minval"] = minval
-    dev.conf.fpars["minval"] = maxval
-    dev.conf.ipars["units"] = units
-    dev.conf.ipars["termconf"] = Int(termconf)
-    dev.conf.spars["customscalename"] = customscalename
-    dev.conf.spars["nichans"] = chans
+    fparam!(dev, "minval", minval)
+    fparam!(dev, "maxval", maxval)
+    iparam!(dev, "units",  units)
+    iparam!(dev, "termconf", Int(termconf))
+    sparam!(dev, "customscale",  customscale)
+    sparam!(dev, "nichans",  nichans)
     
-    setchanidx!(dev)
+    channames = listchannels(dev)
     
+    channels = DaqChannels(devname(dev), devtype(dev), channames, units, chans)
+    dev.chans = channels
     return 
 end
 
-function AbstractDAQs.daqaddinput(dev::NIDev, devname::AbstractString,
+function DAQCore.daqaddinput(dev::NIDev, devname::AbstractString,
                      chans::AbstractVector{<:Integer}; names="",
                      termconf=NIDiff, s = "ai",
                      minval=0.0, maxval=5.0,
@@ -206,16 +187,18 @@ function AbstractDAQs.daqaddinput(dev::NIDev, devname::AbstractString,
     else
         throw("names: $names. Illegal format!")
     end
-    daqaddinput(dev, ch; names=chnames, termconf=termconf, minval=minval, maxval=maxval,
+
+    daqaddinput(dev, ch; names=chnames, termconf=termconf,
+                minval=minval, maxval=maxval,
                 units=units, customscalename=customscalename)
 
-    setchanidx!(dev)
 
     return
         
 end
 
-function AbstractDAQs.numchannels(dev::NIDev)
+
+function DAQCore.numchannels(dev::NIDev)
     num = zeros(UInt32, 1)
     r = NIDAQ.DAQmxGetTaskNumChans(dev.handle, num)
 
@@ -225,7 +208,9 @@ function AbstractDAQs.numchannels(dev::NIDev)
     
 end
 
-function AbstractDAQs.daqchannels(dev::NIDev)
+DAQCore.daqchannels(dev::NIDev) = daqchannels(dev.chans)
+
+function listchannels(dev::NIDev)
     nch = numchannels(dev)
 
     nperch = 30 # Number of characters per channel.
@@ -242,7 +227,7 @@ function AbstractDAQs.daqchannels(dev::NIDev)
 end
 
 
-function AbstractDAQs.daqconfigdev(dev::NIDev; source="",
+function DAQCore.daqconfigdev(dev::NIDev; source="",
                        samplemode=NIDAQ.DAQmx_Val_FiniteSamps,
                        activeedge=NIDAQ.DAQmx_Val_Rising, kw...)
 
@@ -257,7 +242,7 @@ function AbstractDAQs.daqconfigdev(dev::NIDev; source="",
             rate = 1/dt 
         end
     else
-        rate = dev.conf.fpars["rate"]
+        rate = fparam(dev, "rate")
     end
 
 
@@ -279,25 +264,22 @@ function AbstractDAQs.daqconfigdev(dev::NIDev; source="",
                                     activeedge, samplemode, nsamples)
     r != 0 && throw(NIException(r))
 
-    dev.rate = rate
-    dev.nsamples = nsamples
-    dev.conf.fpars["rate"] = rate
-    dev.conf.ipars["nsamples"] = nsamples
-    dev.conf.ipars["samplemode"] = samplemode
-    dev.conf.ipars["activeedge"] = activeedge
+    sampling = DaqSamplingRate(rate, nsamples, now())
+    fparam!(dev, "rate", rate)
+    iparam!(dev, "nsamples", nsamples)
+    iparam!(dev, "samplemode", samplemode)
+    iparam!(dev, "activeedge", activeedge)
+
     
     return 
                                     
 end                       
 
-function AbstractDAQs.daqconfig(dev::NIDev; source="",
-                                samplemode=NIDAQ.DAQmx_Val_FiniteSamps,
-                                activeedge=NIDAQ.DAQmx_Val_Rising, kw...)
-    daqconfigdev(dev; source=source, samplemode=samplemode, activeedge=activeedge, kw...)
-end
+DAQCore.daqconfig(dev::NIDev;kw...) = 
+    daqconfigdev(dev; kw...)
 
 
-function AbstractDAQs.isdaqfinished(dev::NIDev)
+function DAQCore.isdaqfinished(dev::NIDev)
 
     data = zeros(Int32,1)
     #data = reinterpret(NIDAQ.Bool32, zeros(Int32, 1))
@@ -307,21 +289,22 @@ function AbstractDAQs.isdaqfinished(dev::NIDev)
     return data[1] != 0
 end
 
-AbstractDAQs.isreading(dev::NIDev) = !isdaqfinished(dev)
+DAQCore.isreading(dev::NIDev) = !isdaqfinished(dev)
 
     
-function AbstractDAQs.daqstart(dev::NIDev, usethread=true)
+function DAQCore.daqstart(dev::NIDev, usethread=true)
+    sampling = DaqSamplingRate(dev.sampling.rate, dev.sampling.nsamples, now())
+    dev.sampling = sampling
     r = NIDAQ.DAQmxStartTask(dev.handle)
     r != 0 && throw(NIException(r))
-    dev.time = now()
     return
 end
 
 
-function AbstractDAQs.daqread(dev::NIDev)
+function DAQCore.daqread(dev::NIDev)
 
     nch = numchannels(dev)
-    nsamples = dev.nsamples
+    nsamples = dev.sampling.nsamples
     buffer = zeros(Float64, nch, nsamples)
     fm1 =  Int32[NIDAQ.DAQmx_Val_GroupByScanNumber]
     fm =  reinterpret(NIDAQ.Bool32, fm1)[1]
@@ -337,18 +320,17 @@ function AbstractDAQs.daqread(dev::NIDev)
     r != 0 && throw(NIException(r))
 
     stoptask(dev)
+    return MeasData(devname(dev), devtype(dev), dev.sampling, buffer, dev.chans)
     
-    return MeasData{Matrix{Float64},Int}(devname(dev), devtype(dev), dev.time,
-                                         dev.rate, buffer, 0, dev.chanidx)
     
 end
 
-function AbstractDAQs.daqacquire(dev::NIDev)
+function DAQCore.daqacquire(dev::NIDev)
     daqstart(dev)
     return daqread(dev)
 end
 
-function AbstractDAQs.samplesread(dev::NIDev)
+function DAQCore.samplesread(dev::NIDev)
 
     data = zeros(UInt64,1)
     r = NIDAQ.DAQmxGetReadTotalSampPerChanAcquired(dev.handle, data)
