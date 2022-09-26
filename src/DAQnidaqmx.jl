@@ -18,7 +18,7 @@ mutable struct NIDev <: AbstractInputDev
     devname::String
     handle::NIDAQ.TaskHandle
     sampling::DaqSamplingRate
-    config::DaQConfig
+    config::DaqConfig
     chans::DaqChannels{String,Int}
 end
 
@@ -82,7 +82,7 @@ function NIDev(devname::String, loadmaxtask::Bool=false)
         r != 0 && throw(NIException(r))
         handle = th[]
     end
-    chans = DaqChannels(devname, "NIDAQmx", String[], "", 0)
+    chans = DaqChannels(devname, "NIDAQmx", String[], 0, "")
     sampling = DaqSamplingRate(-1.0, 1, now())
     config = DaqConfig()
     return NIDev(devname, handle, sampling, config, chans)
@@ -154,8 +154,8 @@ function DAQCore.daqaddinput(dev::NIDev, chans::AbstractString;
     fparam!(dev, "maxval", maxval)
     iparam!(dev, "units",  units)
     iparam!(dev, "termconf", Int(termconf))
-    sparam!(dev, "customscale",  customscale)
-    sparam!(dev, "nichans",  nichans)
+    sparam!(dev, "customscalename",  customscalename)
+    sparam!(dev, "nichans",  chans)
     
     channames = listchannels(dev)
     
@@ -259,17 +259,17 @@ function DAQCore.daqconfigdev(dev::NIDev; source="",
     else
         nsamples = UInt64(dev.conf.ipars("nsamples"))
     end    
-
     r = NIDAQ.DAQmxCfgSampClkTiming(dev.handle, source, rate,
                                     activeedge, samplemode, nsamples)
     r != 0 && throw(NIException(r))
 
-    sampling = DaqSamplingRate(rate, nsamples, now())
+    dev.sampling = DaqSamplingRate(rate, nsamples, now())
+    
     fparam!(dev, "rate", rate)
     iparam!(dev, "nsamples", nsamples)
     iparam!(dev, "samplemode", samplemode)
     iparam!(dev, "activeedge", activeedge)
-
+    
     
     return 
                                     
@@ -279,7 +279,7 @@ DAQCore.daqconfig(dev::NIDev;kw...) =
     daqconfigdev(dev; kw...)
 
 
-function DAQCore.isdaqfinished(dev::NIDev)
+function isdaqfinished(dev::NIDev)
 
     data = zeros(Int32,1)
     #data = reinterpret(NIDAQ.Bool32, zeros(Int32, 1))
