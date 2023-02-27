@@ -14,12 +14,13 @@ export TermConfig, NIDefault, NIRSE, NINRSE, NIDiff, NIPseudoDiff
 @enum TermConfig::Int32 NIDefault=NIDAQ.DAQmx_Val_Cfg_Default NIRSE=NIDAQ.DAQmx_Val_RSE NINRSE=NIDAQ.DAQmx_Val_NRSE NIDiff=NIDAQ.DAQmx_Val_Diff NIPseudoDiff=NIDAQ.DAQmx_Val_PseudoDiff
 
 
+
 mutable struct NIDev <: AbstractInputDev
     devname::String
     handle::NIDAQ.TaskHandle
     sampling::DaqSamplingRate
     config::DaqConfig
-    chans::DaqChannels{String,Int}
+    chans::DaqChannels{String}
 end
 
 """
@@ -82,7 +83,7 @@ function NIDev(devname::String, loadmaxtask::Bool=false)
         r != 0 && throw(NIException(r))
         handle = th[]
     end
-    chans = DaqChannels(devname, "NIDAQmx", String[], 0, "")
+    chans = DaqChannels(String[], "")
     sampling = DaqSamplingRate(-1.0, 1, now())
     config = DaqConfig()
     return NIDev(devname, handle, sampling, config, chans)
@@ -159,7 +160,7 @@ function DAQCore.daqaddinput(dev::NIDev, chans::AbstractString;
     
     channames = listchannels(dev)
     
-    channels = DaqChannels(devname(dev), devtype(dev), channames, units, chans)
+    channels = DaqChannels(channames, chans)
     dev.chans = channels
     return 
 end
@@ -320,7 +321,8 @@ function DAQCore.daqread(dev::NIDev)
     r != 0 && throw(NIException(r))
 
     stoptask(dev)
-    return MeasData(devname(dev), devtype(dev), dev.sampling, buffer, dev.chans)
+    return MeasData(devname(dev), devtype(dev), dev.sampling, buffer,
+                    dev.chans, fill("", nch))
     
     
 end
